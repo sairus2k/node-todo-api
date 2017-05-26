@@ -1,6 +1,6 @@
 const _ = require('lodash');
 const { mongoose } = require('../db/mongoose');
-const validator = require('validator');
+const { isEmail } = require('validator');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 
@@ -12,44 +12,43 @@ const UserSchema = new mongoose.Schema({
     trim: true,
     unique: true,
     validate: {
-      validator: validator.isEmail,
-      message: '{VALUE} is not a valid email'
-    }
+      validator: value => isEmail(value),
+      message: '{VALUE} is not a valid email',
+    },
   },
   password: {
     type: String,
     require: true,
-    minlength: 6
+    minlength: 6,
   },
   tokens: [{
     access: {
       type: String,
-      require: true
+      require: true,
     },
     token: {
       type: String,
-      require: true
-    }
-  }]
+      require: true,
+    },
+  }],
 });
 
-UserSchema.methods.toJSON = function () {
+UserSchema.methods.toJSON = function toJSON() {
   const user = this;
   const userObject = user.toObject();
   return _.pick(userObject, ['_id', 'email']);
 };
 
-UserSchema.methods.generateAuthToken = function () {
+UserSchema.methods.generateAuthToken = function generateAuthToken() {
   const user = this;
   const access = 'auth';
+  // eslint-disable-next-line no-underscore-dangle
   const token = jwt.sign({ _id: user._id.toHexString(), access }, 'abc123').toString();
   user.tokens.push({ access, token });
-  return user.save().then(() => {
-    return token;
-  });
+  return user.save().then(() => token);
 };
 
-UserSchema.statics.findByToken = function (token) {
+UserSchema.statics.findByToken = function findByToken(token) {
   const User = this;
   let decoded;
   try {
@@ -59,34 +58,35 @@ UserSchema.statics.findByToken = function (token) {
   }
 
   return User.findOne({
-    '_id': decoded._id,
+// eslint-disable-next-line no-underscore-dangle
+    _id: decoded._id,
     'tokens.token': token,
-    'tokens.access': 'auth'
+    'tokens.access': 'auth',
   });
 };
 
-UserSchema.statics.findByCredentials = function (email, password) {
+UserSchema.statics.findByCredentials = function findByCredentials(email, password) {
   const User = this;
-  return User.findOne({email}).then((user) => {
-    if (!user) {
-      return Promise.reject();
-    }
-    return bcrypt.compare(password, user.password).then((res) => {
-      if (res) {
-        return Promise.resolve(user);
+  return User.findOne({ email })
+    .then((user) => {
+      if (!user) {
+        return Promise.reject();
       }
-      return Promise.reject();
+      return bcrypt.compare(password, user.password)
+        .then((res) => {
+          if (res) {
+            return Promise.resolve(user);
+          }
+          return Promise.reject();
+        });
     });
-  });
 };
 
-UserSchema.pre('save', function (next) {
+UserSchema.pre('save', function save(next) {
   const user = this;
   if (user.isModified('password')) {
     bcrypt.genSalt(10)
-      .then((salt) => {
-        return bcrypt.hash(user.password, salt);
-      })
+      .then(salt => bcrypt.hash(user.password, salt))
       .then((hash) => {
         user.password = hash;
         next();
