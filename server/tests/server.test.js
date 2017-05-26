@@ -5,7 +5,7 @@ const { ObjectID } = require('mongodb');
 const { app } = require('../server');
 const { Todo } = require('../models/todo');
 const { User } = require('../models/user');
-const { users, populateUsers, todos, populateTodos } = require('./seed/seed');
+const { mockUsers, populateUsers, mockTodos, populateTodos } = require('./seed/seed');
 
 beforeEach(populateUsers);
 beforeEach(populateTodos);
@@ -15,12 +15,13 @@ describe('POST /todos', () => {
     const text = 'Test todo text';
     request(app)
       .post('/todos')
+      .set('x-auth', mockUsers[0].tokens[0].token)
       .send({ text })
       .expect(200)
       .expect((res) => {
         expect(res.body.text).toBe(text);
       })
-      .end((err, res) => {
+      .end((err) => {
         if (err) {
           done(err);
         }
@@ -28,24 +29,25 @@ describe('POST /todos', () => {
           expect(todos.length).toBe(1);
           expect(todos[0].text).toBe(text);
           done();
-        }).catch((e) => done(e));
+        }).catch(e => done(e));
       });
   });
 
   it('should not create todo with invalid body data', (done) => {
     request(app)
       .post('/todos')
+      .set('x-auth', mockUsers[0].tokens[0].token)
       .send({})
       .expect(400)
-      .end((err, res) => {
+      .end((err) => {
         if (err) {
           done(err);
         }
         Todo.find().then((todos) => {
           expect(todos.length).toBe(2);
           done();
-        }).catch((e) => done(e));
-      })
+        }).catch(e => done(e));
+      });
   });
 });
 
@@ -53,9 +55,10 @@ describe('GET /todos', () => {
   it('should get all todos', (done) => {
     request(app)
       .get('/todos')
+      .set('x-auth', mockUsers[0].tokens[0].token)
       .expect(200)
       .expect((res) => {
-        expect(res.body.todos.length).toBe(2);
+        expect(res.body.todos.length).toBe(1);
       })
       .end(done);
   });
@@ -64,11 +67,20 @@ describe('GET /todos', () => {
 describe('GET /todos/:id', () => {
   it('should return todo doc', (done) => {
     request(app)
-      .get(`/todos/${todos[0]._id.toHexString()}`)
+      .get(`/todos/${mockTodos[0]._id.toHexString()}`)
+      .set('x-auth', mockUsers[0].tokens[0].token)
       .expect(200)
       .expect((res) => {
-        expect(res.body.todo.text).toBe(todos[0].text);
+        expect(res.body.todo.text).toBe(mockTodos[0].text);
       })
+      .end(done);
+  });
+
+  it('should not return todo doc created by other user', (done) => {
+    request(app)
+      .get(`/todos/${mockTodos[1]._id.toHexString()}`)
+      .set('x-auth', mockUsers[0].tokens[0].token)
+      .expect(404)
       .end(done);
   });
 
@@ -76,6 +88,7 @@ describe('GET /todos/:id', () => {
     const hexId = new ObjectID().toHexString();
     request(app)
       .get(`/todos/${hexId}`)
+      .set('x-auth', mockUsers[0].tokens[0].token)
       .expect(404)
       .end(done);
   });
@@ -83,35 +96,49 @@ describe('GET /todos/:id', () => {
   it('should 404 for non-object ids', (done) => {
     request(app)
       .get('/todos/123abc')
+      .set('x-auth', mockUsers[0].tokens[0].token)
       .expect(404)
       .end(done);
   });
 });
 
 describe('DELETE /todos/:id', () => {
-  const hexId = todos[0]._id.toHexString();
   it('should remove a todo', (done) => {
+    const hexId = mockTodos[0]._id.toHexString();
     request(app)
       .delete(`/todos/${hexId}`)
+      .set('x-auth', mockUsers[0].tokens[0].token)
       .expect(200)
       .expect((res) => {
-        expect(res.body.todo.text).toBe(todos[0].text);
+        expect(res.body.todo.text).toBe(mockTodos[0].text);
       })
-      .end((err, res) => {
+      .end((err) => {
         if (err) {
           return done(err);
         }
-        Todo.findById(hexId).then((todo) => {
-          expect(todo).toNotExist();
-          done();
-        }).catch((e) => done(e));
+        return Todo.findById(hexId)
+          .then((todo) => {
+            expect(todo).toNotExist();
+            return done();
+          })
+          .catch(e => done(e));
       });
+  });
+
+  it('should not remove a todo created by another user', (done) => {
+    const hexId = mockTodos[1]._id.toHexString();
+    request(app)
+      .delete(`/todos/${hexId}`)
+      .set('x-auth', mockUsers[0].tokens[0].token)
+      .expect(404)
+      .end(done);
   });
 
   it('should return 404 if todo not found', (done) => {
     const hexId = new ObjectID().toHexString();
     request(app)
       .delete(`/todos/${hexId}`)
+      .set('x-auth', mockUsers[0].tokens[0].token)
       .expect(404)
       .end(done);
   });
@@ -119,18 +146,19 @@ describe('DELETE /todos/:id', () => {
   it('should return 404 if object id is invalid', (done) => {
     request(app)
       .delete('/todos/123abc')
+      .set('x-auth', mockUsers[0].tokens[0].token)
       .expect(404)
       .end(done);
   });
-
 });
 
 describe('PATCH /todos/:id', () => {
   it('should update the todo', (done) => {
-    const hexId = todos[0]._id.toHexString();
+    const hexId = mockTodos[0]._id.toHexString();
     const data = { text: 'Updated todo text', completed: true };
     request(app)
       .patch(`/todos/${hexId}`)
+      .set('x-auth', mockUsers[0].tokens[0].token)
       .send(data)
       .expect(200)
       .expect((res) => {
@@ -141,11 +169,23 @@ describe('PATCH /todos/:id', () => {
       .end(done);
   });
 
+  it('should not update the todo created by another user', (done) => {
+    const hexId = mockTodos[1]._id.toHexString();
+    const data = { text: 'Updated todo text', completed: true };
+    request(app)
+      .patch(`/todos/${hexId}`)
+      .set('x-auth', mockUsers[0].tokens[0].token)
+      .send(data)
+      .expect(404)
+      .end(done);
+  });
+
   it('should clear completedAt when todo is not completed', (done) => {
-    const hexId = todos[1]._id.toHexString();
+    const hexId = mockTodos[1]._id.toHexString();
     const data = { text: 'Updated second todo text', completed: false };
     request(app)
       .patch(`/todos/${hexId}`)
+      .set('x-auth', mockUsers[1].tokens[0].token)
       .send(data)
       .expect(200)
       .expect((res) => {
@@ -161,11 +201,11 @@ describe('GET /users/me', () => {
   it('should return user if authenticated', (done) => {
     request(app)
       .get('/users/me')
-      .set('x-auth', users[0].tokens[0].token)
+      .set('x-auth', mockUsers[0].tokens[0].token)
       .expect(200)
       .expect((res) => {
-        expect(res.body._id).toBe(users[0]._id.toHexString());
-        expect(res.body.email).toBe(users[0].email);
+        expect(res.body._id).toBe(mockUsers[0]._id.toHexString());
+        expect(res.body.email).toBe(mockUsers[0].email);
       })
       .end(done);
   });
@@ -198,7 +238,7 @@ describe('POST /users', () => {
         if (err) {
           return done(err);
         }
-        User.findOne({email}).then((user) => {
+        return User.findOne({ email }).then((user) => {
           expect(user).toExist();
           expect(user.password).toNotBe(password);
           done();
@@ -210,7 +250,7 @@ describe('POST /users', () => {
     const password = '123';
     request(app)
       .post('/users')
-      .send({email, password})
+      .send({ email, password })
       .expect(400)
       .end(done);
   });
@@ -218,11 +258,63 @@ describe('POST /users', () => {
     request(app)
       .post('/users')
       .send({
-        email: users[0].email,
-        password: 'Password123!'
+        email: mockUsers[0].email,
+        password: 'Password123!',
       })
       .expect(400)
       .end(done);
+  });
+});
+
+describe('POST /users/login', () => {
+  it('should login and return auth token', (done) => {
+    request(app)
+      .post('/users/login')
+      .send({
+        email: mockUsers[1].email,
+        password: mockUsers[1].password,
+      })
+      .expect(200)
+      .expect((res) => {
+        expect(res.headers['x-auth']).toExist();
+      })
+      .end((err, res) => {
+        if (err) {
+          return done(err);
+        }
+        return User.findById(mockUsers[1]._id)
+          .then((user) => {
+            expect(user.tokens[1]).toInclude({
+              access: 'auth',
+              token: res.headers['x-auth'],
+            });
+            done();
+          })
+          .catch(e => done(e));
+      });
+  });
+  it('should reject invalid login', (done) => {
+    request(app)
+      .post('/users/login')
+      .send({
+        email: mockUsers[1].email,
+        password: `${mockUsers[1].password}1`,
+      })
+      .expect(400)
+      .expect((res) => {
+        expect(res.headers['x-auth']).toNotExist();
+      })
+      .end((err) => {
+        if (err) {
+          return done(err);
+        }
+        return User.findById(mockUsers[1]._id)
+          .then((user) => {
+            expect(user.tokens.length).toBe(1);
+            done();
+          })
+          .catch(e => done(e));
+      });
   });
 });
 
@@ -230,15 +322,15 @@ describe('DELETE /users/me/token', () => {
   it('should remove auth token on logout', (done) => {
     request(app)
       .delete('/users/me/token')
-      .set('x-auth', users[0].tokens[0].token)
+      .set('x-auth', mockUsers[0].tokens[0].token)
       .expect(200)
       .end((err) => {
         if (err) {
           return done(err);
         }
-        return User.findById(users[0]._id)
+        return User.findById(mockUsers[0]._id)
           .then((user) => {
-            expect(user.tokens[0].token).toNotExist();
+            expect(user.tokens.length).toBe(0);
             done();
           })
           .catch(e => done(e));

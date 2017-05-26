@@ -42,7 +42,6 @@ UserSchema.methods.toJSON = function toJSON() {
 UserSchema.methods.generateAuthToken = function generateAuthToken() {
   const user = this;
   const access = 'auth';
-  // eslint-disable-next-line no-underscore-dangle
   const token = jwt.sign({ _id: user._id.toHexString(), access }, 'abc123').toString();
   user.tokens.push({ access, token });
   return user.save().then(() => token);
@@ -63,7 +62,6 @@ UserSchema.statics.findByToken = function findByToken(token) {
   }
 
   return User.findOne({
-// eslint-disable-next-line no-underscore-dangle
     _id: decoded._id,
     'tokens.token': token,
     'tokens.access': 'auth',
